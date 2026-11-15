@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AnimatePresence } from "framer-motion";
 import OnboardingRegister from "./components/OnboardingRegister";
 import ProfileSetup from "./components/ProfileSetup";
@@ -9,22 +9,37 @@ import Chat from "./components/Chat";
 import FilterSheet from "./components/FilterSheet";
 import NavBar, { type Tab } from "./components/NavBar";
 import { activeFilterCount, defaultFilters } from "./lib/filtering";
-import { getMatchIds, getUser, resetAll, saveProfile, saveUser } from "./store";
+import { getMatches, getMe, logout, saveProfile, type Match } from "./api";
 import type { DiscoverFilters, Profile, User } from "./types";
 
 type Screen = "register" | "setup" | "app";
 
 export default function App() {
-  const [user, setUser] = useState<User | null>(() => getUser());
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [editing, setEditing] = useState(false);
   const [tab, setTab] = useState<Tab>("discover");
-  const [matched, setMatched] = useState<Profile | null>(null);
-  const [chatWith, setChatWith] = useState<Profile | null>(null);
+  const [matched, setMatched] = useState<Match | null>(null);
+  const [chatWith, setChatWith] = useState<Match | null>(null);
   const [filters, setFilters] = useState<DiscoverFilters | null>(null);
   const [showFilters, setShowFilters] = useState(false);
-  const [matchCount, setMatchCount] = useState<number>(() => getMatchIds().length);
+  const [matchCount, setMatchCount] = useState(0);
   // deckKey remounts the deck after a profile edit so filters re-apply.
   const [deckKey, setDeckKey] = useState(0);
+
+  // Restore the session (if any) from the API.
+  useEffect(() => {
+    getMe()
+      .then(setUser)
+      .catch((e: Error) => setLoadError(e.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  // Keep the nav badge in sync with the server.
+  useEffect(() => {
+    if (user?.profile) getMatches().then((m) => setMatchCount(m.length)).catch(() => undefined);
+  }, [user?.profile, matched]);
 
   const screen: Screen = !user
     ? "register"
@@ -36,23 +51,20 @@ export default function App() {
     setUser(u);
   }
 
-  function handleSaveProfile(profile: Profile) {
-    saveProfile(profile);
-    const updated = { ...(user as User), profile };
-    saveUser(updated);
-    setUser(updated);
+  async function handleSaveProfile(profile: Profile) {
+    const saved = await saveProfile(profile, user?.profile);
+    setUser({ ...(user as User), profile: saved });
     setEditing(false);
     setDeckKey((k) => k + 1);
     setTab("discover");
   }
 
-  function handleMatch(profile: Profile) {
-    setMatched(profile);
-    setMatchCount(getMatchIds().length);
+  function handleMatch(match: Match) {
+    setMatched(match);
   }
 
-  function startOver() {
-    resetAll();
+  async function startOver() {
+    await logout();
     setUser(null);
     setMatched(null);
     setChatWith(null);
@@ -61,6 +73,14 @@ export default function App() {
     setMatchCount(0);
     setEditing(false);
     setTab("discover");
+  }
+
+  if (loading || loadError) {
+    return (
+      <div className="min-h-full flex items-center justify-center px-5 text-center text-sm opacity-70">
+        {loadError ? `Couldn't reach the server: ${loadError}` : "Loading…"}
+      </div>
+    );
   }
 
   if (screen === "register") {
@@ -156,7 +176,7 @@ export default function App() {
               onClick={startOver}
               className="mt-3 w-full rounded-full border border-black/15 dark:border-white/20 py-3 text-sm opacity-80"
             >
-              Log out & start over
+              Log out
             </button>
           </div>
         )}
@@ -168,7 +188,7 @@ export default function App() {
         {matched && (
           <MatchPopup
             me={me}
-            them={matched}
+            them={matched.profile}
             onClose={() => setMatched(null)}
             onGoToMatches={() => {
               setMatched(null);
@@ -184,7 +204,7 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {chatWith && <Chat match={chatWith} onBack={() => setChatWith(null)} />}
+      {chatWith && <Chat match={chatWith} myId={user!.id} onBack={() => setChatWith(null)} />}
 
       <AnimatePresence>
         {showFilters && (

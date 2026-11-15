@@ -1,20 +1,9 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import { getDeck, recordSwipe, type Match } from "../api";
 import { filterCandidates } from "../lib/filtering";
-import { addMatch, getCandidates, getSwipes, recordSwipe } from "../store";
 import type { DiscoverFilters, Profile, SwipeDirection } from "../types";
 import SwipeCard from "./SwipeCard";
-
-/**
- * Decides whether a seeded candidate "likes back" when the user likes them, so
- * that matches actually happen. Heuristic: they reciprocate if the two share a
- * trait or have a compatible social style. Deterministic per profile.
- */
-function likesBack(me: Profile, them: Profile): boolean {
-  const sharedTrait = me.traits.some((t) => them.traits.includes(t));
-  const compatibleSocial = Math.abs(me.social - them.social) <= 35;
-  return sharedTrait || compatibleSocial;
-}
 
 export default function SwipeDeck({
   me,
@@ -23,27 +12,36 @@ export default function SwipeDeck({
 }: {
   me: Profile;
   filters: DiscoverFilters;
-  onMatch: (profile: Profile) => void;
+  onMatch: (match: Match) => void;
 }) {
-  const deck = useMemo(() => {
-    const swiped = new Set(getSwipes().map((s) => s.profileId));
-    return filterCandidates(me, getCandidates(), filters).filter(
-      (c) => !swiped.has(c.id)
-    );
+  // The server returns everyone whose budget AND area overlap yours; the softer filters apply here.
+  const [deck, setDeck] = useState<Profile[] | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    getDeck()
+      .then((candidates) => setDeck(filterCandidates(me, candidates, filters)))
+      .catch((e: Error) => setError(e.message));
+    // The deck is remounted (keyed) when the profile or filters change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const [index, setIndex] = useState(0);
 
   function swipe(dir: SwipeDirection) {
-    const current = deck[index];
+    const current = deck?.[index];
     if (!current) return;
-    recordSwipe({ profileId: current.id, direction: dir });
-    if (dir === "like" && likesBack(me, current)) {
-      addMatch(current.id);
-      onMatch(current);
-    }
     setIndex((i) => i + 1);
+    recordSwipe(current.id, dir)
+      .then(({ match }) => match && onMatch(match))
+      .catch((e: Error) => setError(e.message));
+  }
+
+  if (error || !deck) {
+    return (
+      <div className="mx-auto w-full max-w-md px-5 py-16 text-center text-sm opacity-70">
+        {error ? `Something went wrong: ${error}` : "Finding flatmates…"}
+      </div>
+    );
   }
 
   const remaining = deck.slice(index, index + 2).reverse();

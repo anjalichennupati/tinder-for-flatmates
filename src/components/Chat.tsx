@@ -1,108 +1,119 @@
-import { useEffect, useRef, useState } from "react";
-import { addChatMessage, getChat } from "../store";
-import type { ChatMessage, Profile } from "../types";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useLiveQuery } from "@neon/realtime-react";
+import type { SealedLiveQuery } from "@neon/realtime/client";
+import { fetchSealedMessages, sendMessage, type Match, type MessageRow } from "../api";
 
-/** Canned replies the matched flatmate sends back, picked in order then cycled. */
-const AUTO_REPLIES = [
-  "Hey! Thanks for the like 😊",
-  "Yeah I'm still looking for a place — what areas are you set on?",
-  "Nice, that works for my budget too. When are you planning to move?",
-  "Cool! Want to hop on a call this week to figure out the details?",
-  "Sounds good — I'll ping you my number 👍",
-];
-
-function newMsg(from: ChatMessage["from"], text: string): ChatMessage {
-  return { id: `m_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, from, text, at: Date.now() };
-}
-
+/** Fetches the sealed live query for a match; the Chat renders once it has one. */
 export default function Chat({
   match,
+  myId,
   onBack,
 }: {
-  match: Profile;
+  match: Match;
+  myId: string;
   onBack: () => void;
 }) {
-  const [messages, setMessages] = useState<ChatMessage[]>(() => getChat(match.id));
+  const [sealed, setSealed] = useState<SealedLiveQuery<MessageRow>>();
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    fetchSealedMessages(match.matchId).then(
+      (q) => !cancelled && setSealed(q),
+      (e: Error) => !cancelled && setError(e.message)
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [match.matchId]);
+
+  return (
+    <ChatShell match={match} onBack={onBack}>
+      {sealed ? (
+        <LiveChat match={match} myId={myId} sealed={sealed} />
+      ) : (
+        <p className="flex-1 p-6 text-center text-sm opacity-60">
+          {error ? `Couldn't open chat: ${error}` : "Opening chat…"}
+        </p>
+      )}
+    </ChatShell>
+  );
+}
+
+function LiveChat({
+  match,
+  myId,
+  sealed,
+}: {
+  match: Match;
+  myId: string;
+  sealed: SealedLiveQuery<MessageRow>;
+}) {
+  const refreshQuery = useCallback(() => fetchSealedMessages(match.matchId), [match.matchId]);
+  const { data, status, error, utils } = useLiveQuery(sealed, { refreshQuery });
   const [draft, setDraft] = useState("");
-  const [typing, setTyping] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
+  const them = match.profile;
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, typing]);
+  }, [data?.length]);
 
-  function send() {
+  async function send() {
     const text = draft.trim();
-    if (!text) return;
-    const mine = newMsg("me", text);
-    addChatMessage(match.id, mine);
-    setMessages((m) => [...m, mine]);
-    setDraft("");
-
-    // Simulate the flatmate typing and replying.
-    const replyIdx = messages.filter((m) => m.from === "them").length % AUTO_REPLIES.length;
-    setTyping(true);
-    setTimeout(() => {
-      const reply = newMsg("them", AUTO_REPLIES[replyIdx]);
-      addChatMessage(match.id, reply);
-      setMessages((m) => [...m, reply]);
-      setTyping(false);
-    }, 1100);
+    if (!text || sending) return;
+    setSending(true);
+    setSendError("");
+    try {
+      const { txid } = await sendMessage(match.matchId, text);
+      setDraft("");
+      // Wait for our own write to arrive on the live query, so it never "jumps" in late.
+      await utils.awaitTxId(txid, 10_000).catch(() => undefined);
+    } catch (e) {
+      setSendError((e as Error).message);
+    } finally {
+      setSending(false);
+    }
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex flex-col bg-[#eef0fc] dark:bg-[#121327]">
-      {/* header */}
-      <header className="flex items-center gap-3 px-4 py-3 border-b border-black/10 dark:border-white/10 bg-white/80 dark:bg-black/50 backdrop-blur">
-        <button onClick={onBack} className="text-xl px-1" aria-label="Back">
-          ←
-        </button>
-        <img
-          src={match.photos[0]}
-          alt={match.name}
-          className="h-10 w-10 rounded-full object-cover"
-        />
-        <div>
-          <div className="font-semibold leading-tight">{match.name}</div>
-          <div className="text-xs opacity-60">📍 {match.areas[0]}</div>
-        </div>
-      </header>
-
-      {/* messages */}
+    <>
       <div className="flex-1 overflow-y-auto px-4 py-4">
         <div className="mx-auto max-w-md space-y-2">
           <p className="text-center text-xs opacity-50 mb-2">
-            You matched with {match.name}. Say hello! 👋
+            You matched with {them.name}. Say hello! 👋
           </p>
-          {messages.map((m) => (
-            <Bubble key={m.id} mine={m.from === "me"}>
-              {m.text}
+          {status === "error" && (
+            <p role="alert" className="text-center text-xs text-red-500">
+              Live updates stopped: {error?.message}
+            </p>
+          )}
+          {data === undefined && status !== "error" && (
+            <p className="text-center text-xs opacity-50">Loading messages…</p>
+          )}
+          {data?.map((m) => (
+            <Bubble key={m.id} mine={m.sender_id === myId}>
+              {m.body}
             </Bubble>
           ))}
-          {typing && (
-            <Bubble mine={false}>
-              <span className="inline-flex gap-1 py-1">
-                <Dot /> <Dot /> <Dot />
-              </span>
-            </Bubble>
-          )}
           <div ref={endRef} />
         </div>
       </div>
 
-      {/* composer */}
       <div className="p-3 border-t border-black/10 dark:border-white/10 bg-white/80 dark:bg-black/50 backdrop-blur">
+        {sendError && <p className="mx-auto max-w-md pb-2 text-xs text-red-500">{sendError}</p>}
         <div className="mx-auto max-w-md flex items-center gap-2">
           <input
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && send()}
-            placeholder={`Message ${match.name}…`}
+            placeholder={`Message ${them.name}…`}
             className="flex-1 rounded-full border border-black/10 dark:border-white/15 bg-white dark:bg-black/20 px-4 py-2.5 outline-none text-sm"
           />
           <button
             onClick={send}
-            disabled={!draft.trim()}
+            disabled={!draft.trim() || sending}
             className="h-11 w-11 rounded-full bg-brand text-white text-lg disabled:opacity-40 active:scale-90 transition"
             aria-label="Send"
           >
@@ -110,10 +121,36 @@ export default function Chat({
           </button>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 
+function ChatShell({
+  match,
+  onBack,
+  children,
+}: {
+  match: Match;
+  onBack: () => void;
+  children: React.ReactNode;
+}) {
+  const them = match.profile;
+  return (
+    <div className="fixed inset-0 z-40 flex flex-col bg-[#eef0fc] dark:bg-[#121327]">
+      <header className="flex items-center gap-3 px-4 py-3 border-b border-black/10 dark:border-white/10 bg-white/80 dark:bg-black/50 backdrop-blur">
+        <button onClick={onBack} className="text-xl px-1" aria-label="Back">
+          ←
+        </button>
+        <img src={them.photos[0]} alt={them.name} className="h-10 w-10 rounded-full object-cover" />
+        <div>
+          <div className="font-semibold leading-tight">{them.name}</div>
+          <div className="text-xs opacity-60">📍 {them.areas[0]}</div>
+        </div>
+      </header>
+      {children}
+    </div>
+  );
+}
 function Bubble({ mine, children }: { mine: boolean; children: React.ReactNode }) {
   return (
     <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
@@ -128,8 +165,4 @@ function Bubble({ mine, children }: { mine: boolean; children: React.ReactNode }
       </div>
     </div>
   );
-}
-
-function Dot() {
-  return <span className="h-1.5 w-1.5 rounded-full bg-current opacity-50 animate-pulse" />;
 }

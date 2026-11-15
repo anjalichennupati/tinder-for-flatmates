@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { createUser } from "../store";
+import { register } from "../api";
 import type { User } from "../types";
 
 const DEMO_OTP = "123456";
@@ -28,13 +28,17 @@ export default function OnboardingRegister({
     setStep("otp");
   }
 
-  function verifyOtp(e: React.FormEvent) {
+  async function verifyOtp(e: React.FormEvent) {
     e.preventDefault();
     if (otp.trim() !== DEMO_OTP) {
       return setError("Incorrect OTP. (Hint: use 123456 for this demo.)");
     }
     setError("");
-    onDone(createUser(mobile, email));
+    try {
+      onDone(await register(mobile, email));
+    } catch (err) {
+      setError((err as Error).message);
+    }
   }
 
   return (

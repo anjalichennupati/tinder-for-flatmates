@@ -26,7 +26,7 @@ export default function ProfileSetup({
 }: {
   userId: string;
   initial?: Profile;
-  onSave: (profile: Profile) => void;
+  onSave: (profile: Profile) => Promise<void>;
 }) {
   const [name, setName] = useState(initial?.name ?? "");
   const [age, setAge] = useState(initial?.age ?? 25);
@@ -59,13 +59,16 @@ export default function ProfileSetup({
     );
   }
 
-  function submit() {
+  const [saving, setSaving] = useState(false);
+
+  async function submit() {
     if (!name.trim()) return setError("Please add your name.");
     if (photos.length < 2) return setError("Please add 2 photos.");
     if (areas.length === 0) return setError("Pick at least one area.");
     if (budgetMin > budgetMax) return setError("Min budget can't exceed max budget.");
     setError("");
-    onSave({
+    setSaving(true);
+    await onSave({
       id: userId,
       name: name.trim(),
       age,
@@ -78,7 +81,9 @@ export default function ProfileSetup({
       social,
       traits,
       bio: bio.trim() || undefined,
-    });
+    })
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setSaving(false));
   }
 
   const inr = (n: number) => `₹${n.toLocaleString("en-IN")}`;
@@ -254,9 +259,10 @@ export default function ProfileSetup({
       <div className="fixed bottom-0 inset-x-0 p-4 bg-gradient-to-t from-black/10 to-transparent dark:from-black/40">
         <button
           onClick={submit}
-          className="mx-auto block w-full max-w-md rounded-full bg-brand text-white font-semibold py-3.5 shadow-lg active:scale-[0.98] transition"
+          disabled={saving}
+          className="mx-auto block w-full max-w-md rounded-full bg-brand text-white font-semibold py-3.5 shadow-lg active:scale-[0.98] transition disabled:opacity-60"
         >
-          {initial ? "Save changes" : "Start swiping"}
+          {saving ? "Saving…" : initial ? "Save changes" : "Start swiping"}
         </button>
       </div>
     </div>

@@ -1,16 +1,27 @@
-import { getCandidates, getMatchIds } from "../store";
-import type { Profile } from "../types";
+import { useEffect, useState } from "react";
+import { getMatches, type Match } from "../api";
 
 export default function Matches({
   onStartSwiping,
   onOpenChat,
 }: {
   onStartSwiping: () => void;
-  onOpenChat: (profile: Profile) => void;
+  onOpenChat: (match: Match) => void;
 }) {
-  const ids = getMatchIds();
-  const byId = new Map(getCandidates().map((c) => [c.id, c]));
-  const matches = ids.map((id) => byId.get(id)).filter(Boolean) as Profile[];
+  const [list, setList] = useState<Match[] | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    getMatches().then(setList).catch((e: Error) => setError(e.message));
+  }, []);
+
+  if (!list) {
+    return (
+      <div className="mx-auto w-full max-w-md px-5 py-16 text-center text-sm opacity-70">
+        {error ? `Couldn't load matches: ${error}` : "Loading matches…"}
+      </div>
+    );
+  }
+  const matches = list.map((m) => m.profile);
 
   return (
     <div className="mx-auto w-full max-w-md px-5 py-6">
@@ -30,10 +41,10 @@ export default function Matches({
         </button>
       ) : (
         <div className="grid grid-cols-2 gap-3">
-          {matches.map((m) => (
+          {list.map(({ matchId, profile: m }, i) => (
             <button
-              key={m.id}
-              onClick={() => onOpenChat(m)}
+              key={matchId}
+              onClick={() => onOpenChat(list[i])}
               className="text-left rounded-2xl overflow-hidden bg-white dark:bg-white/5 shadow active:scale-[0.98] transition"
             >
               <div className="aspect-square bg-black">
