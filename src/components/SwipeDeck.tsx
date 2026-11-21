@@ -4,6 +4,7 @@ import { getDeck, recordSwipe, type Match } from "../api";
 import { filterCandidates } from "../lib/filtering";
 import type { DiscoverFilters, Profile, SwipeDirection } from "../types";
 import SwipeCard from "./SwipeCard";
+import Icon from "./Icon";
 
 export default function SwipeDeck({
   me,
@@ -38,8 +39,10 @@ export default function SwipeDeck({
 
   if (error || !deck) {
     return (
-      <div className="mx-auto w-full max-w-md px-5 py-16 text-center text-sm opacity-70">
-        {error ? `Something went wrong: ${error}` : "Finding flatmates…"}
+      <div className="mx-auto w-full max-w-sm px-5 py-16">
+        <div className="card p-6 text-center text-sm font-semibold">
+          {error ? `Something went wrong: ${error}` : "Finding flatmates…"}
+        </div>
       </div>
     );
   }
@@ -48,8 +51,8 @@ export default function SwipeDeck({
   const done = index >= deck.length;
 
   return (
-    <div className="mx-auto w-full max-w-md px-5 py-4">
-      <div className="relative mx-auto aspect-[3/4] w-full">
+    <div className="mx-auto w-full max-w-sm px-5 py-5 sm:py-8 md:max-w-[26rem]">
+      <div className="relative mx-auto aspect-[3/4] w-full max-h-[62vh] sm:max-h-none">
         {done ? (
           <EmptyState />
         ) : (
@@ -60,20 +63,16 @@ export default function SwipeDeck({
                 <motion.div
                   key={profile.id}
                   className="absolute inset-0"
-                  initial={{ scale: 0.95, y: 12 }}
-                  animate={{ scale: isTop ? 1 : 0.95, y: isTop ? 0 : 12 }}
+                  initial={{ scale: 0.95, y: 14 }}
+                  animate={{ scale: isTop ? 1 : 0.95, y: isTop ? 0 : 14 }}
                   exit={{ opacity: 0 }}
                   style={{ zIndex: i }}
                 >
                   {isTop ? (
                     <SwipeCard profile={profile} onSwipe={swipe} />
                   ) : (
-                    <div className="absolute inset-0 rounded-3xl overflow-hidden shadow-xl bg-black">
-                      <img
-                        src={profile.photos[0]}
-                        alt=""
-                        className="h-full w-full object-cover opacity-90"
-                      />
+                    <div className="absolute inset-0 overflow-hidden rounded-3xl border-2 border-ink bg-violet-tint shadow-brut">
+                      <img src={profile.photos[0]} alt="" className="h-full w-full object-cover opacity-80" />
                     </div>
                   )}
                 </motion.div>
@@ -84,22 +83,19 @@ export default function SwipeDeck({
       </div>
 
       {!done && (
-        <div className="mt-6 flex items-center justify-center gap-6">
-          <button
-            onClick={() => swipe("pass")}
-            className="h-16 w-16 rounded-full bg-white dark:bg-white/10 shadow-lg text-2xl text-red-500 active:scale-90 transition"
-            aria-label="Pass"
-          >
-            ✕
+        <div className="mt-7 flex items-center justify-center gap-8">
+          <button onClick={() => swipe("pass")} className="btn btn-white h-16 w-16 p-0 text-coral" aria-label="Pass">
+            <Icon name="x" size={30} stroke={3} />
           </button>
-          <button
-            onClick={() => swipe("like")}
-            className="h-16 w-16 rounded-full bg-white dark:bg-white/10 shadow-lg text-2xl text-green-500 active:scale-90 transition"
-            aria-label="Like"
-          >
-            ♥
+          <button onClick={() => swipe("like")} className="btn btn-coral h-[4.5rem] w-[4.5rem] p-0" aria-label="Like">
+            <Icon name="heart" size={32} stroke={2.5} />
           </button>
         </div>
+      )}
+      {!done && (
+        <p className="mt-4 hidden text-center text-xs font-semibold text-ink/50 sm:block">
+          Drag the card, or use the buttons
+        </p>
       )}
     </div>
   );
@@ -107,12 +103,14 @@ export default function SwipeDeck({
 
 function EmptyState() {
   return (
-    <div className="absolute inset-0 rounded-3xl border border-dashed border-black/15 dark:border-white/20 flex flex-col items-center justify-center text-center px-6">
-      <div className="text-4xl mb-3">🎉</div>
-      <h3 className="font-semibold text-lg">You're all caught up!</h3>
-      <p className="text-sm opacity-70 mt-1">
-        No more flatmates match right now. Try widening your filters (gender, budget
-        or area) or check back later.
+    <div className="card absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
+      <span className="icon-btn mb-4 h-16 w-16 bg-violet-tint">
+        <Icon name="home" size={28} />
+      </span>
+      <h3 className="text-xl font-bold">You're all caught up!</h3>
+      <p className="mt-2 text-sm text-ink/60">
+        No more flatmates match right now. Try widening your filters (gender, budget or area) or check
+        back later.
       </p>
     </div>
   );
