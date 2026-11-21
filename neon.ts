@@ -4,7 +4,7 @@ export default defineConfig({
   // Declare your Neon services here
   preview: {
     // Browser origins allowed to open Realtime subscriptions. Add your deployed app's origin here.
-    realtime: { allowedOrigins: ["http://localhost:5173"] },
+    realtime: { allowedOrigins: ["http://localhost:5173", "https://tinder-for-flatmates.vercel.app"] },
   },
   auth: false,
   functions: {
